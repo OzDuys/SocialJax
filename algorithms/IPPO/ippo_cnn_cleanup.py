@@ -175,8 +175,9 @@ def make_train(config):
         config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
     else:
         config["NUM_ACTORS"] = config["NUM_ENVS"]
-    config["NUM_UPDATES"] = (
-        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+    # Ensure at least one update even if TOTAL_TIMESTEPS is small (e.g., smoke tests).
+    config["NUM_UPDATES"] = max(
+        1, config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
     )
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]

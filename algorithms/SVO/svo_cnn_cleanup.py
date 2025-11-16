@@ -175,8 +175,9 @@ def make_train(config):
     env = socialjax.make(config["ENV_NAME"], **config["ENV_KWARGS"])
 
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
-    config["NUM_UPDATES"] = (
-        config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
+    # Ensure at least one update even if TOTAL_TIMESTEPS is small (e.g., smoke tests).
+    config["NUM_UPDATES"] = max(
+        1, config["TOTAL_TIMESTEPS"] // config["NUM_STEPS"] // config["NUM_ENVS"]
     )
     config["MINIBATCH_SIZE"] = (
         config["NUM_ACTORS"] * config["NUM_STEPS"] // config["NUM_MINIBATCHES"]
@@ -557,14 +558,15 @@ def evaluate(params, env, save_path, config):
     # 保存GIF
     print(f"Saving Episode GIF")
     pics = [Image.fromarray(img) for img in pics]
+    gif_path = f"{root_dir}/state_outer_step_{o_t+1}.gif"
     pics[0].save(
-    f"{root_dir}/state_outer_step_{o_t+1}.gif",
-    format="GIF",
-    save_all=True,
-    optimize=False,
-    append_images=pics[1:],
-    duration=200,
-    loop=0,
+        gif_path,
+        format="GIF",
+        save_all=True,
+        optimize=False,
+        append_images=pics[1:],
+        duration=200,
+        loop=0,
     )
     log_eval_episode(
         step=int(config.get("TOTAL_TIMESTEPS", 0)),
@@ -572,6 +574,8 @@ def evaluate(params, env, save_path, config):
         returns=episode_returns,
         cleaned_total=cleaned_total,
     )
+    if wandb.run is not None:
+        wandb.log({"Episode GIF": wandb.Video(gif_path, caption="Evaluation Episode", format="gif")})
         
         # print(f"Episode {episode} total reward: {episode_reward}")
 def tune(default_config):
