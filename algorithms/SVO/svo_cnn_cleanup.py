@@ -23,6 +23,7 @@ import os
 import matplotlib.pyplot as plt
 from PIL import Image
 from pathlib import Path
+from algorithms.utils.cleanup_logging import init_wandb_run, log_eval_episode
 
 class CNN(nn.Module):
     activation: str = "relu"
@@ -450,15 +451,21 @@ def single_run(config):
     config = OmegaConf.to_container(config)
 
 
-    wandb.init(
-        entity=config["ENTITY"],
-        project=config["PROJECT"],
-        tags=["SVO", "FF"],
-        config=config,
-        mode=config["WANDB_MODE"],
-        name=f'svo_cnn_cleanup',
-        group=f'cleanup',
+    run_name = config.get("RUN_NAME") or f'{config.get("CONDITION", "C2")}_seed{config.get("SEED", 0)}'
+    init_wandb_run(
+        project=config.get("PROJECT", "socialjax-cleanup"),
+        entity=config.get("ENTITY") or None,
+        run_name=run_name,
+        condition=config.get("CONDITION", "C2"),
+        algo_name=config.get("ALGO_NAME", "SVO"),
+        mechanism_class=config.get("MECHANISM_CLASS", "ClassI"),
+        seed=config.get("SEED", 0),
+        total_timesteps=int(config.get("TOTAL_TIMESTEPS", 0)),
+        extra_config={"env_name": config.get("ENV_NAME", "clean_up")},
     )
+    tags = ["SVO"] + (config.get("WANDB_TAGS") or [])
+    if wandb.run is not None:
+        wandb.run.tags = tuple(tags)
 
     rng = jax.random.PRNGKey(config["SEED"])
     rngs = jax.random.split(rng, config["NUM_SEEDS"])
@@ -496,6 +503,8 @@ def evaluate(params, env, save_path, config):
     rng, _rng = jax.random.split(rng)
     obs, state = env.reset(_rng)
     done = False
+    episode_returns = np.zeros(len(env.agents), dtype=float)
+    cleaned_total = 0.0
     
     pics = []
     img = env.render(state)
@@ -524,6 +533,13 @@ def evaluate(params, env, save_path, config):
         rng, _rng = jax.random.split(rng)
         obs, state, reward, done, info = env.step(_rng, state, [v.item() for v in env_act.values()])
         done = done["__all__"]
+        if isinstance(reward, dict):
+            reward_np = np.asarray(list(reward.values()), dtype=float)
+        else:
+            reward_np = np.asarray(reward, dtype=float)
+        episode_returns = episode_returns + reward_np
+        if isinstance(info, dict) and "cleaned_water" in info:
+            cleaned_total += float(np.mean(np.asarray(info["cleaned_water"])))
         
         # 记录结果
         # episode_reward += sum(reward.values())
@@ -549,6 +565,12 @@ def evaluate(params, env, save_path, config):
     append_images=pics[1:],
     duration=200,
     loop=0,
+    )
+    log_eval_episode(
+        step=int(config.get("TOTAL_TIMESTEPS", 0)),
+        episode_idx=0,
+        returns=episode_returns,
+        cleaned_total=cleaned_total,
     )
         
         # print(f"Episode {episode} total reward: {episode_reward}")

@@ -23,9 +23,9 @@
   
 
 "ANNEAL_LR": True
-"SEED": 30
+"SEED": 0
 "NUM_SEEDS": 1
-"TUNE": True
+"TUNE": False
 
 "REWARD": "individual" # individual; common
 "GIF_NUM_FRAMES": 250
@@ -33,7 +33,11 @@
 
 # WandB Params
 "ENTITY": ""
-"PROJECT": "socialjax"
+"PROJECT": "socialjax-cleanup"
 "WANDB_MODE" : "online"
 "WANDB_TAGS":
   - INDIVIDUAL_REWARD # COMMON_REWARD
+"CONDITION": "C0"
+"MECHANISM_CLASS": "Baseline"
+"ALGO_NAME": "IPPO"
+"RUN_NAME": ""

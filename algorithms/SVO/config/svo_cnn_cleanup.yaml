@@ -25,7 +25,7 @@
   "svo_ideal_angle_degrees": 90
 
 "ANNEAL_LR": False
-"SEED": 30
+"SEED": 0
 "NUM_SEEDS": 1
 "TUNE": False
 
@@ -34,7 +34,11 @@
 
 # WandB Params
 "ENTITY": ""
-"PROJECT": "svo_socialjax"
+"PROJECT": "socialjax-cleanup"
 "WANDB_MODE" : "online"
 "WANDB_TAGS":
   - INDIVIDUAL_REWARD # COMMON_REWARD
+"CONDITION": "C2"
+"MECHANISM_CLASS": "ClassI"
+"ALGO_NAME": "SVO"
+"RUN_NAME": ""

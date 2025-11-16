@@ -25,7 +25,7 @@
   
 
 "ANNEAL_LR": True
-"SEED": 30
+"SEED": 0
 "NUM_SEEDS": 1
 "TUNE": False
 
@@ -34,7 +34,11 @@
 
 # WandB Params
 "ENTITY": ""
-"PROJECT": "socialjax"
+"PROJECT": "socialjax-cleanup"
 "WANDB_MODE" : "online"
 "WANDB_TAGS":
   - COMMON_REWARD # COMMON_REWARD; INDIVIDUAL_REWARD
+"CONDITION": "C3"
+"MECHANISM_CLASS": "ClassII+III"
+"ALGO_NAME": "MAPPO"
+"RUN_NAME": ""
