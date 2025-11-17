@@ -29,9 +29,11 @@ from algorithms.utils.cleanup_logging import init_wandb_run, log_eval_episode
 
 class CNN(nn.Module):
     activation: str = "relu"
+    dtype: Any = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x):
+        x = x.astype(self.dtype)
         if self.activation == "relu":
             activation = nn.relu
         else:
@@ -41,6 +43,8 @@ class CNN(nn.Module):
             kernel_size=(5, 5),
             kernel_init=orthogonal(np.sqrt(2)),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
         x = nn.Conv(
@@ -48,6 +52,8 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             kernel_init=orthogonal(np.sqrt(2)),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
         x = nn.Conv(
@@ -55,12 +61,16 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             kernel_init=orthogonal(np.sqrt(2)),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
         x = x.reshape((x.shape[0], -1))  # Flatten
 
         x = nn.Dense(
-            features=64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            features=64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
 
@@ -70,34 +80,42 @@ class CNN(nn.Module):
 class ActorCritic(nn.Module):
     action_dim: Sequence[int]
     activation: str = "relu"
+    dtype: Any = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x):
+        x = x.astype(self.dtype)
         if self.activation == "relu":
             activation = nn.relu
         else:
             activation = nn.tanh
 
-        embedding = CNN(self.activation)(x)
+        embedding = CNN(self.activation, dtype=self.dtype)(x)
 
         actor_mean = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(embedding)
         actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(actor_mean)
-        pi = distrax.Categorical(logits=actor_mean)
+        pi = distrax.Categorical(logits=actor_mean.astype(jnp.float32))
 
         critic = nn.Dense(
-            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            64, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(embedding)
         critic = activation(critic)
         critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
             critic
         )
 
-        return pi, jnp.squeeze(critic, axis=-1)
+        return pi, jnp.squeeze(critic.astype(jnp.float32), axis=-1)
 
 
 class Transition(NamedTuple):

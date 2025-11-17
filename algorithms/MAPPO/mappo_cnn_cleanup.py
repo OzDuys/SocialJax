@@ -28,9 +28,11 @@ from algorithms.utils.cleanup_logging import init_wandb_run, log_eval_episode
 
 class CNN(nn.Module):
     activation: str = "relu"
+    dtype: Any = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x):
+        x = x.astype(self.dtype)
         if self.activation == "relu":
             activation = nn.relu
         else:
@@ -40,6 +42,8 @@ class CNN(nn.Module):
             kernel_size=(3, 3),
             kernel_init=orthogonal(np.sqrt(2)),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
         # x = nn.Conv(
@@ -59,7 +63,9 @@ class CNN(nn.Module):
         x = x.reshape((x.shape[0], -1))  # Flatten
 
         x = nn.Dense(
-            features=16, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            features=16, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(x)
         x = activation(x)
 
@@ -69,32 +75,40 @@ class CNN(nn.Module):
 class Actor(nn.Module):
     action_dim: int
     activation: str = "relu"
+    dtype: Any = jnp.bfloat16
 
     @nn.compact
     def __call__(self, obs):
+        obs = obs.astype(self.dtype)
         if self.activation == "relu":
             activation = nn.relu
         else:
             activation = nn.tanh
-        embedding = CNN(self.activation)(obs)
+        embedding = CNN(self.activation, dtype=self.dtype)(obs)
         actor_mean = nn.Dense(
-            16, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
+            16, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(embedding)
 
         actor_mean = activation(actor_mean)
         actor_mean = nn.Dense(
-            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
+            self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(actor_mean)
-        pi = distrax.Categorical(logits=actor_mean)
+        pi = distrax.Categorical(logits=actor_mean.astype(jnp.float32))
 
         return pi
 
 
 class Critic(nn.Module):
     activation: str = "relu"
+    dtype: Any = jnp.bfloat16
 
     @nn.compact
     def __call__(self, x):
+        x = x.astype(self.dtype)
         world_state = x
 
         if self.activation == "relu":
@@ -102,11 +116,13 @@ class Critic(nn.Module):
         else:
             activation = nn.tanh
 
-        embedding = CNN(self.activation)(world_state)
+        embedding = CNN(self.activation, dtype=self.dtype)(world_state)
         hidden = nn.Dense(
             features=16,
             kernel_init=orthogonal(np.sqrt(2)),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(embedding)
 
         hidden = activation(hidden)
@@ -115,9 +131,11 @@ class Critic(nn.Module):
             features=1,
             kernel_init=orthogonal(0.01),
             bias_init=constant(0.0),
+            dtype=self.dtype,
+            param_dtype=jnp.float32,
         )(hidden)
         # squeeze 去除最后一个维度
-        return jnp.squeeze(value, axis=-1)
+        return jnp.squeeze(value.astype(jnp.float32), axis=-1)
     
 
 class Transition(NamedTuple):
