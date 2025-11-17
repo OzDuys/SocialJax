@@ -190,6 +190,7 @@ def group_and_distribute_sum(array):
     return group_sums[group_indices]
 
 def make_train(config):
+    config["PARAMETER_SHARING"] = config.get("PARAMETER_SHARING", True)
     env = socialjax.make(config["ENV_NAME"], **config["ENV_KWARGS"])
 
     config["NUM_ACTORS"] = env.num_agents * config["NUM_ENVS"]
