@@ -420,9 +420,6 @@ def make_train(config):
             )
             train_state = update_state[0]
             metric = traj_batch.info
-            apples_total = None
-            if "original_rewards" in metric:
-                apples_total = metric["original_rewards"].sum()
             rng = update_state[-1]
 
             def callback(metric):
@@ -434,8 +431,8 @@ def make_train(config):
             metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["advantages"] = advantages.mean()
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
-            if apples_total is not None:
-                metric["train/apples_total"] = float(apples_total)
+            if "original_rewards" in metric:
+                metric["train/apples_total"] = metric["original_rewards"].sum()
 
             # metric["original_rewards"] = metric["original_rewards"].mean() * config["NUM_STEPS"] 
             # metric["shaped_rewards"] = metric["shaped_rewards"].mean() * config["NUM_STEPS"] 

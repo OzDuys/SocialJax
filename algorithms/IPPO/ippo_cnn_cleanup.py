@@ -481,9 +481,6 @@ def make_train(config):
                 )
                 train_state = update_state[0]
                 metric = traj_batch.info
-                apples_total = None
-                if "original_rewards" in metric:
-                    apples_total = metric["original_rewards"].sum()
                 rng = update_state[-1]
             else:
                 update_state_dict = []
@@ -518,8 +515,9 @@ def make_train(config):
             metric["update_step"] = update_step
             metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
-            if apples_total is not None:
-                metric["train/apples_total"] = float(apples_total)
+            if "original_rewards" in metric:
+                # total apples across actors and steps (keeps JAX array until after mean)
+                metric["train/apples_total"] = metric["original_rewards"].sum()
 
             jax.debug.callback(callback, metric)
 
