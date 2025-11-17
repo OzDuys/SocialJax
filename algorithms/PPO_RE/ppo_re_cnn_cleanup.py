@@ -425,23 +425,21 @@ def make_train(config):
                 wandb.log(metric)
 
             update_step = update_step + 1
-            # Compute apple/clean counts before averaging. For PPO-RE, use the
-            # original (pre-exchange) rewards from info for logging consistency.
+            # Compute apple/clean counts before averaging. Prefer explicit apple
+            # counts if present; otherwise fall back to original rewards, and
+            # finally to the exchanged rewards used for learning.
             apples_per_actor = clean_per_actor = clean_rate = None
             num_actors = config["NUM_ACTORS"]
             num_agents_local = config["ENV_KWARGS"]["num_agents"]
             if (
                 "clean_action_info" in metric
-                and (
-                    "apples_collected_per_agent" in metric
-                    or "original_rewards" in metric
-                )
             ):
-                apples_source = (
-                    metric["apples_collected_per_agent"]
-                    if "apples_collected_per_agent" in metric
-                    else metric["original_rewards"] / num_agents_local
-                )
+                if "apples_collected_per_agent" in metric:
+                    apples_source = metric["apples_collected_per_agent"]
+                elif "original_rewards" in metric:
+                    apples_source = metric["original_rewards"] / num_agents_local
+                else:
+                    apples_source = traj_batch.reward
                 if apples_source.size and apples_source.size % num_actors == 0:
                     apples_flat = apples_source.reshape(-1, num_actors)
                     clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
