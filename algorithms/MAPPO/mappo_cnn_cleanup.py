@@ -533,7 +533,9 @@ def make_train(config):
             update_steps = update_steps + 1
             metric = jax.tree_map(lambda x: x.mean(), metric)
             info_raw = metric
-            if "original_rewards" in info_raw and "clean_action_info" in info_raw:
+            if "clean_action_info" in info_raw and (
+                "apples_collected_per_agent" in info_raw or "original_rewards" in info_raw
+            ):
                 num_actors = config["NUM_ACTORS"]
                 num_agents = config["ENV_KWARGS"]["num_agents"]
                 apples_source = (
