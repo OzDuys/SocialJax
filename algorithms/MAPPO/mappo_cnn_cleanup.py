@@ -526,22 +526,25 @@ def make_train(config):
                     if "apples_collected_per_agent" in info_raw
                     else info_raw["original_rewards"] / num_agents
                 )
-                apples_flat = apples_source.reshape(-1, num_actors)
-                clean_flat = info_raw["clean_action_info"].reshape(-1, num_actors)
-                apples_per_actor = apples_flat.sum(axis=0)
-                clean_per_actor = clean_flat.sum(axis=0)
+                if apples_source.size and apples_source.size % num_actors == 0:
+                    apples_flat = apples_source.reshape(-1, num_actors)
+                    clean_flat = info_raw["clean_action_info"].reshape(-1, num_actors)
+                    apples_per_actor = apples_flat.sum(axis=0)
+                    clean_per_actor = clean_flat.sum(axis=0)
 
-                def gini(x):
-                    x = jnp.sort(x)
-                    n = x.size
-                    total = jnp.sum(x)
-                    return jax.lax.cond(
-                        total <= 0,
-                        lambda: 0.0,
-                        lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
-                    )
+                    def gini(x):
+                        x = jnp.sort(x)
+                        n = x.size
+                        total = jnp.sum(x)
+                        return jax.lax.cond(
+                            total <= 0,
+                            lambda: 0.0,
+                            lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
+                        )
 
-                clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
+                    clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
+                else:
+                    apples_per_actor = clean_per_actor = clean_rate = None
             else:
                 apples_per_actor = clean_per_actor = clean_rate = None
 
