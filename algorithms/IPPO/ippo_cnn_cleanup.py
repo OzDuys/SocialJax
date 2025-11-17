@@ -519,25 +519,11 @@ def make_train(config):
                 wandb.log(metric)
 
             update_step = update_step + 1
-            metric = jax.tree_map(lambda x: x.mean(), metric)
+            # Compute apple/clean counts before averaging
             if config["PARAMETER_SHARING"]:
-                metric["update_step"] = update_step
-                metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
-                # jax.debug.callback(callback, metric)
-            else:
-                for i in range(env.num_agents):
-                    metric[i]["update_step"] = update_step
-                    metric[i]["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
-                metric = metric[0]
-                # jax.debug.callback(callback, metric)
-            metric["update_step"] = update_step
-            metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
-            metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
-            if config["PARAMETER_SHARING"]:
-                # Compute per-actor aggregates before logging
                 num_actors = config["NUM_ACTORS"]
-                # Flatten (steps*actors)
-                apples_flat = metric["original_rewards"].reshape(-1, num_actors)
+                num_agents = config["ENV_KWARGS"]["num_agents"]
+                apples_flat = metric["original_rewards"].reshape(-1, num_actors) / num_agents
                 clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
                 apples_per_actor = apples_flat.sum(axis=0)
                 clean_per_actor = clean_flat.sum(axis=0)
@@ -553,7 +539,21 @@ def make_train(config):
                     )
 
                 clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
-
+            metric = jax.tree_map(lambda x: x.mean(), metric)
+            if config["PARAMETER_SHARING"]:
+                metric["update_step"] = update_step
+                metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
+                # jax.debug.callback(callback, metric)
+            else:
+                for i in range(env.num_agents):
+                    metric[i]["update_step"] = update_step
+                    metric[i]["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
+                metric = metric[0]
+                # jax.debug.callback(callback, metric)
+            metric["update_step"] = update_step
+            metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
+            metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
+            if config["PARAMETER_SHARING"]:
                 metric["train/apples_total"] = apples_per_actor.sum()
                 metric["train/apples_per_actor"] = apples_per_actor
                 metric["train/clean_actions_per_actor"] = clean_per_actor
@@ -737,6 +737,9 @@ def evaluate(params, env, save_path, config):
 
     clean_rate = float(clean_actions.sum() / (episode_len * n_agents))
 
+    apples_per_agent_count = (apples_total / n_agents).tolist()
+    apples_total_count = float(apples_total.sum() / n_agents)
+
     wandb.log(
         {
             "step": int(config.get("TOTAL_TIMESTEPS", 0)),
@@ -749,8 +752,8 @@ def evaluate(params, env, save_path, config):
             "eval/returns_gini": gini(episode_returns),
             "eval/clean_actions_per_agent": clean_actions.tolist(),
             "eval/clean_action_rate": clean_rate,
-            "eval/apples_per_agent": apples_total.tolist(),
-            "eval/apples_total": float(apples_total.sum()),
+            "eval/apples_per_agent": apples_per_agent_count,
+            "eval/apples_total": apples_total_count,
             "eval/episode_length": episode_len,
         }
     )

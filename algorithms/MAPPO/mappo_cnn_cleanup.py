@@ -521,7 +521,8 @@ def make_train(config):
             metric["env_step"] = update_steps * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
             num_actors = config["NUM_ACTORS"]
-            apples_flat = metric["original_rewards"].reshape(-1, num_actors)
+            num_agents = config["ENV_KWARGS"]["num_agents"]
+            apples_flat = metric["original_rewards"].reshape(-1, num_actors) / num_agents
             clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
             apples_per_actor = apples_flat.sum(axis=0)
             clean_per_actor = clean_flat.sum(axis=0)
@@ -708,6 +709,8 @@ def evaluate(params, env, save_path, config):
         return float((2 * np.arange(1, n + 1) @ x - (n + 1) * x.sum()) / (n * x.sum() + 1e-8))
 
     clean_rate = float(clean_actions.sum() / (episode_len * len(env.agents)))
+    apples_per_agent_count = (apples_total / len(env.agents)).tolist()
+    apples_total_count = float(apples_total.sum() / len(env.agents))
 
     wandb.log(
         {
@@ -721,8 +724,8 @@ def evaluate(params, env, save_path, config):
             "eval/returns_gini": gini(episode_returns),
             "eval/clean_actions_per_agent": clean_actions.tolist(),
             "eval/clean_action_rate": clean_rate,
-            "eval/apples_per_agent": apples_total.tolist(),
-            "eval/apples_total": float(apples_total.sum()),
+            "eval/apples_per_agent": apples_per_agent_count,
+            "eval/apples_total": apples_total_count,
             "eval/episode_length": episode_len,
         }
     )
