@@ -22,7 +22,7 @@
   "jit" : True
   
 
-"ANNEAL_LR": True
+"ANNEAL_LR": False
 "SEED": 0
 "NUM_SEEDS": 1
 "TUNE": False
