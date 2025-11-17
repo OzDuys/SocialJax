@@ -1460,8 +1460,8 @@ class Clean_up(MultiAgentEnv):
         ) -> State:
             key, subkey = jax.random.split(key)
 
-            # Find the free spaces in the grid
-            grid = jnp.zeros((self.GRID_SIZE_ROW, self.GRID_SIZE_COL), jnp.int16)
+            # Find the free spaces in the grid (use int32 to avoid dtype promotion warnings)
+            grid = jnp.zeros((self.GRID_SIZE_ROW, self.GRID_SIZE_COL), jnp.int32)
 
 
             inside_players_pos = jax.random.permutation(subkey, self.SPAWNS_PLAYER_IN)
@@ -1474,8 +1474,8 @@ class Clean_up(MultiAgentEnv):
             potential_dirt = self.POTENTIAL_DIRT
             dirt = self.DIRT
 
-            potential_dirt_label = jnp.zeros((len(potential_dirt)), dtype=jnp.int16) +Items.potential_dirt
-            dirt_label = jnp.zeros((len(dirt)), dtype=jnp.int16) + Items.dirt
+            potential_dirt_label = jnp.zeros((len(potential_dirt)), dtype=jnp.int32) +Items.potential_dirt
+            dirt_label = jnp.zeros((len(dirt)), dtype=jnp.int32) + Items.dirt
 
             potential_dirt_and_dirt = jnp.concatenate((potential_dirt, dirt))
             potential_dirt_and_dirt_label = jnp.concatenate((potential_dirt_label, dirt_label))
@@ -1962,4 +1962,3 @@ class Clean_up(MultiAgentEnv):
             return jnp.where(agent_mask, svo_utility, array), theta
         else:
             return svo_utility, theta
-
