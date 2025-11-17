@@ -342,52 +342,75 @@ def make_train(config):
 
             advantages, targets = _calculate_gae(traj_batch, last_val)
 
-            # UPDATE NETWORK
+            # UPDATE NETWORK (match IPPO batching/reshaping)
             def _update_epoch(update_state, unused):
                 train_state, traj_batch, advantages, targets, rng = update_state
 
-                def loss_fn(params, traj_batch, gae, targets, rng):
-                    rng, _rng = jax.random.split(rng)
-                    batch_size = traj_batch.obs.shape[0]
-                    idx = jax.random.permutation(_rng, batch_size)
-                    idx = idx[: config["MINIBATCH_SIZE"]]
+                def _loss_fn(params, traj_batch, gae, targets):
+                    # Rerun network on a flat batch of observations.
+                    pi, value = network.apply(params, traj_batch.obs)
+                    log_prob = pi.log_prob(traj_batch.action)
 
-                    b_obs = traj_batch.obs[idx]
-                    b_action = traj_batch.action[idx]
-                    b_log_prob = traj_batch.log_prob[idx]
-                    b_advantages = gae[idx]
-                    b_targets = targets[idx]
+                    # Value loss (simple squared error, as in PPO_RE design).
+                    value_loss = ((targets - value) ** 2).mean()
 
-                    pi, value = network.apply(params, b_obs)
-                    log_prob = pi.log_prob(b_action)
+                    # Policy loss with PPO clipping.
+                    ratio = jnp.exp(log_prob - traj_batch.log_prob)
+                    gae_norm = (gae - gae.mean()) / (gae.std() + 1e-8)
+                    loss_actor1 = ratio * gae_norm
+                    loss_actor2 = (
+                        jnp.clip(
+                            ratio,
+                            1.0 - config["CLIP_EPS"],
+                            1.0 + config["CLIP_EPS"],
+                        )
+                        * gae_norm
+                    )
+                    loss_actor = -jnp.minimum(loss_actor1, loss_actor2).mean()
+
                     entropy = pi.entropy().mean()
 
-                    ratio = jnp.exp(log_prob - b_log_prob)
-                    pg_loss1 = -b_advantages * ratio
-                    pg_loss2 = -b_advantages * jnp.clip(
-                        ratio,
-                        1.0 - config["CLIP_EPS"],
-                        1.0 + config["CLIP_EPS"],
-                    )
-                    pg_loss = jnp.maximum(pg_loss1, pg_loss2).mean()
-
-                    value_loss = ((b_targets - value) ** 2).mean()
-                    loss = (
-                        pg_loss
+                    total_loss = (
+                        loss_actor
                         + config["VF_COEF"] * value_loss
                         - config["ENT_COEF"] * entropy
                     )
-                    return loss, {
-                        "pg_loss": pg_loss,
-                        "v_loss": value_loss,
-                        "entropy": entropy,
-                    }
+                    return total_loss, (value_loss, loss_actor, entropy)
 
-                grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-                (loss, loss_info), grads = grad_fn(
-                    train_state.params, traj_batch, advantages, targets, rng
+                def _update_minibatch(train_state, batch_info):
+                    traj_b, adv_b, targets_b = batch_info
+                    grads_fn = jax.value_and_grad(_loss_fn, has_aux=True)
+                    (total_loss, loss_info), grads = grads_fn(
+                        train_state.params, traj_b, adv_b, targets_b
+                    )
+                    train_state = train_state.apply_gradients(grads=grads)
+                    return train_state, (total_loss, loss_info)
+
+                # Flatten (NUM_STEPS, NUM_ACTORS, ...) into a single batch dim.
+                rng, _rng = jax.random.split(rng)
+                batch_size = config["MINIBATCH_SIZE"] * config["NUM_MINIBATCHES"]
+                assert (
+                    batch_size == config["NUM_STEPS"] * config["NUM_ACTORS"]
+                ), "batch size must equal NUM_STEPS * NUM_ACTORS"
+
+                batch = (traj_batch, advantages, targets)
+                batch = jax.tree_util.tree_map(
+                    lambda x: x.reshape((batch_size,) + x.shape[2:]), batch
                 )
-                train_state = train_state.apply_gradients(grads=grads)
+                permutation = jax.random.permutation(_rng, batch_size)
+                shuffled_batch = jax.tree_util.tree_map(
+                    lambda x: jnp.take(x, permutation, axis=0), batch
+                )
+                minibatches = jax.tree_util.tree_map(
+                    lambda x: jnp.reshape(
+                        x, [config["NUM_MINIBATCHES"], -1] + list(x.shape[1:])
+                    ),
+                    shuffled_batch,
+                )
+
+                train_state, loss_info = jax.lax.scan(
+                    _update_minibatch, train_state, minibatches
+                )
                 return (train_state, traj_batch, advantages, targets, rng), loss_info
 
             update_state = (train_state, traj_batch, advantages, targets, rng)
