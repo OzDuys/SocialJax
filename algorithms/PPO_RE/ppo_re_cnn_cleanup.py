@@ -249,22 +249,27 @@ def make_train(config):
                 )(rng_step, env_state, env_act)
 
                 # Apply reward-exchange mechanism to the per-agent rewards.
-                # reward is a dict: agent_id -> (NUM_ENVS,) array.
-                # Build (NUM_ENVS, num_agents) matrix of raw rewards.
-                rewards_mat = jnp.stack(
-                    [reward[a] for a in env.agents], axis=1
-                )  # (NUM_ENVS, N)
+                # First convert the dict-of-per-agent rewards to a flat
+                # (NUM_ACTORS,) vector using the same batchify logic as IPPO,
+                # then reshape to (NUM_ENVS, num_agents), mix rewards, and
+                # flatten back to (NUM_ACTORS,).
+                reward_vec = batchify(reward, env.agents, config["NUM_ACTORS"]).squeeze()
+                num_envs = config["NUM_ENVS"]
+                num_agents_local = config["ENV_KWARGS"]["num_agents"]
+                num_actors = config["NUM_ACTORS"]
+                rewards_mat = reward_vec.reshape(num_agents_local, num_envs).T  # (NUM_ENVS, N)
                 total_rewards = rewards_mat.sum(axis=1, keepdims=True)
                 rewards_others = total_rewards - rewards_mat
 
                 s_val = s_anneal(update_step)
                 s = jnp.clip(s_val, 0.0, 1.0)
                 other_coeff = jnp.where(
-                    num_agents > 1,
-                    (1.0 - s) / (num_agents - 1),
+                    num_agents_local > 1,
+                    (1.0 - s) / (num_agents_local - 1),
                     0.0,
                 )
-                exchanged_rewards = s * rewards_mat + other_coeff * rewards_others
+                exchanged_mat = s * rewards_mat + other_coeff * rewards_others
+                reward_exchanged_vec = exchanged_mat.T.reshape((num_actors,))
 
                 def _reshape_info(x):
                     size = x.size
@@ -282,14 +287,11 @@ def make_train(config):
                     return x
 
                 info = jax.tree_map(_reshape_info, info)
-                # Use exchanged rewards for learning (PPO/GAE), keeping original
-                # rewards in `info["original_rewards"]` via the wrapper.
-                rew_batch = exchanged_rewards.T.reshape((config["NUM_ACTORS"], -1))
                 transition = Transition(
                     batchify_dict(done, env.agents, config["NUM_ACTORS"]).squeeze(),
                     action,
                     value,
-                    rew_batch.squeeze(),
+                    reward_exchanged_vec,
                     log_prob,
                     obs_batch,
                     info,
