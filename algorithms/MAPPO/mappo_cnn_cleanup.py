@@ -521,7 +521,12 @@ def make_train(config):
             if "original_rewards" in info_raw and "clean_action_info" in info_raw:
                 num_actors = config["NUM_ACTORS"]
                 num_agents = config["ENV_KWARGS"]["num_agents"]
-                apples_flat = info_raw["original_rewards"].reshape(-1, num_actors) / num_agents
+                apples_source = (
+                    info_raw["apples_collected_per_agent"]
+                    if "apples_collected_per_agent" in info_raw
+                    else info_raw["original_rewards"] / num_agents
+                )
+                apples_flat = apples_source.reshape(-1, num_actors)
                 clean_flat = info_raw["clean_action_info"].reshape(-1, num_actors)
                 apples_per_actor = apples_flat.sum(axis=0)
                 clean_per_actor = clean_flat.sum(axis=0)
@@ -670,8 +675,11 @@ def evaluate(params, env, save_path, config):
         episode_returns = episode_returns + reward_np
         if isinstance(info, dict) and "cleaned_water" in info:
             cleaned_total += float(np.mean(np.asarray(info["cleaned_water"])))
-        if isinstance(info, dict) and "original_rewards" in info:
-            apples_total += np.asarray(info["original_rewards"], dtype=float)
+        if isinstance(info, dict):
+            if "apples_collected_per_agent" in info:
+                apples_total += np.asarray(info["apples_collected_per_agent"], dtype=float)
+            elif "original_rewards" in info:
+                apples_total += np.asarray(info["original_rewards"], dtype=float) / len(env.agents)
         if isinstance(info, dict) and "clean_action_info" in info:
             clean_actions += np.asarray(info["clean_action_info"], dtype=float)
         
