@@ -489,6 +489,9 @@ def make_train(config):
             )
             train_states = update_state[0]
             metric = traj_batch.info
+            apples_total = None
+            if "original_rewards" in metric:
+                apples_total = metric["original_rewards"].sum()
             # loss_info["ratio_0"] = loss_info["ratio"].at[0,0].get()
             # loss_info = jax.tree_map(lambda x: x.mean(), loss_info)
             # metric["loss"] = loss_info
@@ -502,6 +505,8 @@ def make_train(config):
             metric["update_steps"] = update_steps
             metric["env_step"] = update_steps * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
+            if apples_total is not None:
+                metric["train/apples_total"] = float(apples_total)
 
             # jax.experimental.io_callback(callback, None, metric)
 
