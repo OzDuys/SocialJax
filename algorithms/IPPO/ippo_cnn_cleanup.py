@@ -706,6 +706,7 @@ def evaluate(params, env, save_path, config):
             "eval/clean_actions_per_agent": clean_actions.tolist(),
             "eval/clean_action_rate": clean_rate,
             "eval/apples_per_agent": apples_total.tolist(),
+            "eval/apples_total": float(apples_total.sum()),
             "eval/episode_length": episode_len,
         }
     )
