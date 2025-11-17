@@ -266,12 +266,6 @@ def make_train(config):
                 )
                 exchanged_rewards = s * rewards_mat + other_coeff * rewards_others
 
-                # Map back to dict form expected downstream.
-                reward = {
-                    a: exchanged_rewards[:, i]
-                    for i, a in enumerate(env.agents)
-                }
-
                 def _reshape_info(x):
                     size = x.size
                     num_actors = config["NUM_ACTORS"]
@@ -288,11 +282,14 @@ def make_train(config):
                     return x
 
                 info = jax.tree_map(_reshape_info, info)
+                # Use exchanged rewards for learning (PPO/GAE), keeping original
+                # rewards in `info["original_rewards"]` via the wrapper.
+                rew_batch = exchanged_rewards.T.reshape((config["NUM_ACTORS"], -1))
                 transition = Transition(
                     batchify_dict(done, env.agents, config["NUM_ACTORS"]).squeeze(),
                     action,
                     value,
-                    batchify(reward, env.agents, config["NUM_ACTORS"]).squeeze(),
+                    rew_batch.squeeze(),
                     log_prob,
                     obs_batch,
                     info,
@@ -499,4 +496,3 @@ def main(config):
 
 if __name__ == "__main__":
     main()
-
