@@ -425,38 +425,36 @@ def make_train(config):
                 wandb.log(metric)
 
             update_step = update_step + 1
-            # Compute apple/clean counts before averaging, same as IPPO.
+            # Compute apple/clean counts before averaging. PPO-RE reshapes
+            # its rewards, so use the rollout rewards directly as the apple
+            # source to avoid missing keys and shape mismatches.
             apples_per_actor = clean_per_actor = clean_rate = None
-            if ("clean_action_info" in metric) and (
-                "apples_collected_per_agent" in metric or "original_rewards" in metric
+            num_actors = config["NUM_ACTORS"]
+            if (
+                "clean_action_info" in metric
+                and traj_batch.reward.size
+                and traj_batch.reward.size % num_actors == 0
             ):
-                num_actors = config["NUM_ACTORS"]
-                num_agents_local = config["ENV_KWARGS"]["num_agents"]
-                apples_source = (
-                    metric["apples_collected_per_agent"]
-                    if "apples_collected_per_agent" in metric
-                    else metric["original_rewards"] / num_agents_local
-                )
-                if apples_source.size and apples_source.size % num_actors == 0:
-                    apples_flat = apples_source.reshape(-1, num_actors)
-                    clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
-                    apples_per_actor = apples_flat.sum(axis=0)
-                    clean_per_actor = clean_flat.sum(axis=0)
+                apples_source = traj_batch.reward
+                apples_flat = apples_source.reshape(-1, num_actors)
+                clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
+                apples_per_actor = apples_flat.sum(axis=0)
+                clean_per_actor = clean_flat.sum(axis=0)
 
-                    def gini(x):
-                        x = jnp.sort(x)
-                        n = x.size
-                        total = jnp.sum(x)
-                        return jax.lax.cond(
-                            total <= 0,
-                            lambda: 0.0,
-                            lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x))
-                                     / (n * total) - (n + 1) / n),
-                        )
-
-                    clean_rate = clean_flat.sum() / (
-                        config["NUM_STEPS"] * num_actors
+                def gini(x):
+                    x = jnp.sort(x)
+                    n = x.size
+                    total = jnp.sum(x)
+                    return jax.lax.cond(
+                        total <= 0,
+                        lambda: 0.0,
+                        lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x))
+                                 / (n * total) - (n + 1) / n),
                     )
+
+                clean_rate = clean_flat.sum() / (
+                    config["NUM_STEPS"] * num_actors
+                )
 
             metric = jax.tree_map(lambda x: x.mean(), metric)
             metric["update_step"] = update_step
