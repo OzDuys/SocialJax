@@ -660,7 +660,8 @@ def evaluate(params, env, save_path, config):
     print(f"Saving Episode GIF")
     pics = [Image.fromarray(np.array(img)) for img in pics]
     n_agents = len(env.agents)
-    gif_path = f"{root_dir}/{n_agents}-agents_seed-{config['SEED']}_frames-{o_t + 1}.gif"
+    gif_name = f"{config.get('ALGO_NAME','IPPO')}_{config.get('CONDITION','C0')}_seed-{config.get('SEED',0)}_{n_agents}-agents_frames-{o_t + 1}.gif"
+    gif_path = f"{root_dir}/{gif_name}"
     pics[0].save(
         gif_path,
         format="GIF",

@@ -636,7 +636,8 @@ def evaluate(params, env, save_path, config):
     # 保存GIF
     print(f"Saving Episode GIF")
     pics = [Image.fromarray(img) for img in pics]
-    gif_path = f"{root_dir}/state_outer_step_{o_t+1}.gif"
+    gif_name = f"{config.get('ALGO_NAME','MAPPO')}_{config.get('CONDITION','C3')}_seed-{config.get('SEED',0)}_{len(env.agents)}-agents_frames-{o_t+1}.gif"
+    gif_path = f"{root_dir}/{gif_name}"
     pics[0].save(
         gif_path,
         format="GIF",
