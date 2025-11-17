@@ -531,7 +531,8 @@ def make_train(config):
                 wandb.log(metric)
 
             update_steps = update_steps + 1
-            metric = jax.tree_map(lambda x: x.mean(), metric)
+
+            # Compute apple/clean counts before averaging, mirroring IPPO/SVO
             info_raw = metric
             if "clean_action_info" in info_raw and (
                 "apples_collected_per_agent" in info_raw or "original_rewards" in info_raw
