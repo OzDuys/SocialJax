@@ -290,7 +290,22 @@ def make_train(config):
                     env.step, in_axes=(0, 0, 0)
                 )(rng_step, env_state, env_act)
 
-                info = jax.tree_map(lambda x: x.reshape((config["NUM_ACTORS"])), info)
+                def _reshape_info(x):
+                    size = x.size
+                    num_actors = config["NUM_ACTORS"]
+                    num_envs = config["NUM_ENVS"]
+                    num_agents = config["ENV_KWARGS"]["num_agents"]
+                    if size == num_actors:
+                        return x.reshape((num_actors,))
+                    if size == num_envs * num_agents:
+                        return x.reshape((num_actors,))
+                    if size == num_envs:
+                        return jnp.repeat(x, num_agents)
+                    if size == 1:
+                        return jnp.repeat(x, num_actors)
+                    return x
+
+                info = jax.tree_map(_reshape_info, info)
                 done_batch = batchify(done, env.agents, config["NUM_ACTORS"]).squeeze()
                 transition = Transition(
                     jnp.tile(done["__all__"], env.num_agents),
