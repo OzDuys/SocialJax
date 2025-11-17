@@ -534,7 +534,10 @@ def make_train(config):
 
             update_step = update_step + 1
             # Compute apple/clean counts before averaging
-            if config["PARAMETER_SHARING"]:
+            apples_per_actor = clean_per_actor = clean_rate = None
+            if config["PARAMETER_SHARING"] and (
+                "apples_collected_per_agent" in metric or "original_rewards" in metric
+            ):
                 num_actors = config["NUM_ACTORS"]
                 num_agents = config["ENV_KWARGS"]["num_agents"]
                 apples_source = (
@@ -542,22 +545,23 @@ def make_train(config):
                     if "apples_collected_per_agent" in metric
                     else metric["original_rewards"] / num_agents
                 )
-                apples_flat = apples_source.reshape(-1, num_actors)
-                clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
-                apples_per_actor = apples_flat.sum(axis=0)
-                clean_per_actor = clean_flat.sum(axis=0)
+                if apples_source.size and apples_source.size % num_actors == 0:
+                    apples_flat = apples_source.reshape(-1, num_actors)
+                    clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
+                    apples_per_actor = apples_flat.sum(axis=0)
+                    clean_per_actor = clean_flat.sum(axis=0)
 
-                def gini(x):
-                    x = jnp.sort(x)
-                    n = x.size
-                    total = jnp.sum(x)
-                    return jax.lax.cond(
-                        total <= 0,
-                        lambda: 0.0,
-                        lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
-                    )
+                    def gini(x):
+                        x = jnp.sort(x)
+                        n = x.size
+                        total = jnp.sum(x)
+                        return jax.lax.cond(
+                            total <= 0,
+                            lambda: 0.0,
+                            lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
+                        )
 
-                clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
+                    clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
             metric = jax.tree_map(lambda x: x.mean(), metric)
             if config["PARAMETER_SHARING"]:
                 metric["update_step"] = update_step
@@ -572,7 +576,7 @@ def make_train(config):
             metric["update_step"] = update_step
             metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
-            if config["PARAMETER_SHARING"]:
+            if config["PARAMETER_SHARING"] and apples_per_actor is not None:
                 metric["train/apples_total"] = apples_per_actor.sum()
                 metric["train/apples_per_actor"] = apples_per_actor
                 metric["train/clean_actions_per_actor"] = clean_per_actor
@@ -776,6 +780,7 @@ def evaluate(params, env, save_path, config):
             "eval/clean_action_rate": clean_rate,
             "eval/apples_per_agent": apples_per_agent_count,
             "eval/apples_total": apples_total_count,
+            "eval/team_apples": apples_total_count,
             "eval/episode_length": episode_len,
         }
     )
