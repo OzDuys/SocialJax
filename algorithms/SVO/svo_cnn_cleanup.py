@@ -505,6 +505,8 @@ def evaluate(params, env, save_path, config):
     obs, state = env.reset(_rng)
     done = False
     episode_returns = np.zeros(len(env.agents), dtype=float)
+    apples_total = np.zeros(len(env.agents), dtype=float)
+    clean_actions = np.zeros(len(env.agents), dtype=float)
     cleaned_total = 0.0
     
     pics = []
@@ -541,6 +543,10 @@ def evaluate(params, env, save_path, config):
         episode_returns = episode_returns + reward_np
         if isinstance(info, dict) and "cleaned_water" in info:
             cleaned_total += float(np.mean(np.asarray(info["cleaned_water"])))
+        if isinstance(info, dict) and "original_rewards" in info:
+            apples_total += np.asarray(info["original_rewards"], dtype=float)
+        if isinstance(info, dict) and "clean_action_info" in info:
+            clean_actions += np.asarray(info["clean_action_info"], dtype=float)
         
         # 记录结果
         # episode_reward += sum(reward.values())
@@ -569,11 +575,36 @@ def evaluate(params, env, save_path, config):
         duration=200,
         loop=0,
     )
-    log_eval_episode(
-        step=int(config.get("TOTAL_TIMESTEPS", 0)),
-        episode_idx=0,
-        returns=episode_returns,
-        cleaned_total=cleaned_total,
+    episode_len = o_t + 1
+    team_return = float(episode_returns.sum())
+    mean_return = float(episode_returns.mean())
+
+    def gini(x):
+        x = np.asarray(x, dtype=float).flatten()
+        if np.allclose(x, 0):
+            return 0.0
+        x = np.sort(x)
+        n = x.size
+        cum = np.cumsum(x)
+        return float((2 * np.arange(1, n + 1) @ x - (n + 1) * x.sum()) / (n * x.sum() + 1e-8))
+
+    clean_rate = float(clean_actions.sum() / (episode_len * len(env.agents)))
+
+    wandb.log(
+        {
+            "step": int(config.get("TOTAL_TIMESTEPS", 0)),
+            "eval/episode": 0,
+            "eval/team_return": team_return,
+            "eval/mean_return": mean_return,
+            "eval/fairness_std": float(episode_returns.std()),
+            "eval/cleaned_total": cleaned_total,
+            "eval/returns_per_agent": episode_returns.tolist(),
+            "eval/returns_gini": gini(episode_returns),
+            "eval/clean_actions_per_agent": clean_actions.tolist(),
+            "eval/clean_action_rate": clean_rate,
+            "eval/apples_per_agent": apples_total.tolist(),
+            "eval/episode_length": episode_len,
+        }
     )
     if wandb.run is not None:
         wandb.log({"Episode GIF": wandb.Video(gif_path, caption="Evaluation Episode", format="gif")})
