@@ -449,8 +449,30 @@ def make_train(config):
             metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
             metric["advantages"] = advantages.mean()
             metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
-            if "original_rewards" in metric:
-                metric["train/apples_total"] = metric["original_rewards"].sum()
+            if config["PARAMETER_SHARING"]:
+                num_actors = config["NUM_ACTORS"]
+                apples_flat = metric["original_rewards"].reshape(-1, num_actors)
+                clean_flat = metric["clean_action_info"].reshape(-1, num_actors)
+                apples_per_actor = apples_flat.sum(axis=0)
+                clean_per_actor = clean_flat.sum(axis=0)
+
+                def gini(x):
+                    x = jnp.sort(x)
+                    n = x.size
+                    total = jnp.sum(x)
+                    return jax.lax.cond(
+                        total <= 0,
+                        lambda: 0.0,
+                        lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
+                    )
+
+                clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors)
+
+                metric["train/apples_total"] = apples_per_actor.sum()
+                metric["train/apples_per_actor"] = apples_per_actor
+                metric["train/clean_actions_per_actor"] = clean_per_actor
+                metric["train/clean_action_rate"] = clean_rate
+                metric["train/returns_gini"] = gini(apples_per_actor)
 
             # metric["original_rewards"] = metric["original_rewards"].mean() * config["NUM_STEPS"] 
             # metric["shaped_rewards"] = metric["shaped_rewards"].mean() * config["NUM_STEPS"] 
