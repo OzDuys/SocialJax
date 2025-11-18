@@ -604,7 +604,7 @@ def single_run(config):
 
     print("** Saving Results **")
     filename = f'{config["ENV_NAME"]}_seed{config["SEED"]}'
-    runner_state = out["runner_state"][0]
+    runner_state = jax.tree_map(lambda x: x[0], out["runner_state"])
     train_state_inv = runner_state[0]
     train_state_im = runner_state[1]
     save_dir = "./checkpoints/reciprocity"
