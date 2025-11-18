@@ -605,8 +605,8 @@ def single_run(config):
     print("** Saving Results **")
     filename = f'{config["ENV_NAME"]}_seed{config["SEED"]}'
     runner_state = out["runner_state"][0]
-    train_state_inv = jax.tree_map(lambda x: x[0], runner_state[0])
-    train_state_im = jax.tree_map(lambda x: x[0], runner_state[1])
+    train_state_inv = runner_state[0]
+    train_state_im = runner_state[1]
     save_dir = "./checkpoints/reciprocity"
     os.makedirs(save_dir, exist_ok=True)
     save_params(train_state_inv, f"{save_dir}/{filename}_innovator.pkl")
