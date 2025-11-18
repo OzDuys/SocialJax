@@ -539,11 +539,12 @@ def make_train(config):
             ):
                 num_actors = config["NUM_ACTORS"]
                 num_agents = config["ENV_KWARGS"]["num_agents"]
-                apples_source = (
-                    info_raw["apples_collected_per_agent"]
-                    if "apples_collected_per_agent" in info_raw
-                    else info_raw["original_rewards"] / num_agents
-                )
+                if "apples_collected_per_agent" in info_raw:
+                    apples_source = info_raw["apples_collected_per_agent"]
+                elif config["ENV_KWARGS"].get("shared_rewards", False):
+                    apples_source = info_raw["original_rewards"]
+                else:
+                    apples_source = info_raw["original_rewards"] / num_agents
                 if apples_source.size and apples_source.size % num_actors == 0:
                     apples_flat = apples_source.reshape(-1, num_actors)
                     clean_flat = info_raw["clean_action_info"].reshape(-1, num_actors)
