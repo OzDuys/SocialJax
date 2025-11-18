@@ -18,6 +18,7 @@ import numpy as np
 import optax
 import socialjax
 import wandb
+from socialjax.wrappers.baselines import LogWrapper
 from flax.linen.initializers import constant, orthogonal
 from flax.training.train_state import TrainState
 from omegaconf import OmegaConf
@@ -156,10 +157,13 @@ def _compute_gae(traj_batch: Transition, last_val: jnp.ndarray, gamma: float, ga
 
 def make_train(config):
     env = socialjax.make(config["ENV_NAME"], **config["ENV_KWARGS"])
+    env = LogWrapper(env, replace_info=False)
     num_agents = env.num_agents
     innovator_idx = int(config.get("INNOVATOR_INDEX", 0))
     imitator_indices = [i for i in range(num_agents) if i != innovator_idx]
     num_imitators = len(imitator_indices)
+    num_actors_total = config["NUM_ENVS"] * num_agents
+    config["NUM_ACTORS"] = num_actors_total
 
     if config["PARAMETER_SHARING"]:
         num_actors_inv = config["NUM_ENVS"]
@@ -197,6 +201,18 @@ def make_train(config):
         reset_rng = jax.random.split(_rng, config["NUM_ENVS"])
         obsv, env_state = jax.vmap(env.reset, in_axes=(0,))(reset_rng)
         niceness = jnp.zeros((config["NUM_ENVS"], num_agents))
+
+        def _reshape_info(x):
+            size = x.size
+            if size == num_actors_total:
+                return x.reshape((num_actors_total,))
+            if size == config["NUM_ENVS"] * num_agents:
+                return x.reshape((num_actors_total,))
+            if size == config["NUM_ENVS"]:
+                return jnp.repeat(x, num_agents)
+            if size == 1:
+                return jnp.repeat(x, num_actors_total)
+            return x
 
         def _env_step(runner_state, unused):
             ts_inv, ts_im, env_state, last_obs, niceness, rng = runner_state
@@ -242,6 +258,7 @@ def make_train(config):
 
             reward_im = reward[:, imitator_indices] + config["IMITATOR_LAMBDA"] * intrinsic
             reward_inv = reward[:, innovator_idx]
+            info_flat = jax.tree_map(_reshape_info, info)
 
             # Flatten imitator trajectories for PPO update
             transition_inv = Transition(
@@ -266,7 +283,7 @@ def make_train(config):
             )
 
             runner_state = (ts_inv, ts_im, env_state, obsv, niceness_next, rng)
-            return runner_state, (transition_inv, transition_im, niceness_next)
+            return runner_state, (transition_inv, transition_im, niceness_next, info_flat)
 
         def _calculate_advantages(traj_inv, traj_im, last_obs, ts_inv, ts_im):
             obs_by_agent = jnp.transpose(last_obs, (1, 0, 2, 3, 4))
@@ -313,7 +330,7 @@ def make_train(config):
             runner_state_inner = (ts_inv, ts_im, env_state, obsv, niceness, rng)
             runner_state_inner, traj = jax.lax.scan(_env_step, runner_state_inner, None, config["NUM_STEPS"])
             (ts_inv, ts_im, env_state, last_obs, niceness, rng) = runner_state_inner
-            traj_inv, traj_im, niceness_seq = traj
+            traj_inv, traj_im, niceness_seq, info_seq = traj
 
             adv_inv, targets_inv, adv_im, targets_im = _calculate_advantages(traj_inv, traj_im, last_obs, ts_inv, ts_im)
 
@@ -370,15 +387,48 @@ def make_train(config):
             ts_inv, metrics_inv = _update_epoch(ts_inv, (minibatches_inv.transition, minibatches_inv.advantages, minibatches_inv.targets), network_inv)
             ts_im, metrics_im = _update_epoch(ts_im, (minibatches_im.transition, minibatches_im.advantages, minibatches_im.targets), network_im)
 
-            # Training metrics
-            mean_clean = traj_inv.clean_action.mean()
-            metric = {
-                "update_step": update_step,
-                "env_step": update_step * config["NUM_STEPS"] * config["NUM_ENVS"],
-                "train/innovator_return": traj_inv.reward.sum() / config["NUM_ENVS"],
-                "train/imitator_return": traj_im.reward.sum() / (config["NUM_ENVS"] * num_imitators),
-                "train/clean_action_rate": mean_clean,
-            }
+            def gini(x):
+                x = jnp.sort(x)
+                n = x.size
+                total = jnp.sum(x)
+                return jax.lax.cond(
+                    total <= 0,
+                    lambda: 0.0,
+                    lambda: (2 * jnp.sum((jnp.arange(1, n + 1) * x)) / (n * total) - (n + 1) / n),
+                )
+
+            apples_per_actor = clean_per_actor = clean_rate = None
+            if "apples_collected_per_agent" in info_seq or "original_rewards" in info_seq:
+                apples_source = (
+                    info_seq["apples_collected_per_agent"]
+                    if "apples_collected_per_agent" in info_seq
+                    else info_seq["original_rewards"] / num_agents
+                )
+                if apples_source.size and apples_source.size % num_actors_total == 0:
+                    apples_flat = apples_source.reshape(-1, num_actors_total)
+                    clean_flat = (
+                        info_seq["clean_action_info"].reshape(-1, num_actors_total)
+                        if "clean_action_info" in info_seq
+                        else jnp.zeros_like(apples_flat)
+                    )
+                    apples_per_actor = apples_flat.sum(axis=0)
+                    clean_per_actor = clean_flat.sum(axis=0)
+                    clean_rate = clean_flat.sum() / (config["NUM_STEPS"] * num_actors_total)
+
+            metric = jax.tree_map(lambda x: x.mean(), info_seq)
+            metric["update_step"] = update_step
+            metric["env_step"] = update_step * config["NUM_STEPS"] * config["NUM_ENVS"]
+            metric["train/innovator_return"] = traj_inv.reward.sum() / config["NUM_ENVS"]
+            metric["train/imitator_return"] = traj_im.reward.sum() / (config["NUM_ENVS"] * num_imitators)
+            if "clean_action_info" in metric:
+                metric["clean_action_info"] = metric["clean_action_info"] * config["ENV_KWARGS"]["num_inner_steps"]
+            if clean_rate is not None:
+                metric["train/clean_action_rate"] = clean_rate
+            if apples_per_actor is not None:
+                metric["train/apples_total"] = apples_per_actor.sum()
+                metric["train/apples_per_actor"] = apples_per_actor
+                metric["train/clean_actions_per_actor"] = clean_per_actor
+                metric["train/returns_gini"] = gini(apples_per_actor)
             jax.debug.callback(lambda m: wandb.log(m), metric)
 
             update_step = update_step + 1
