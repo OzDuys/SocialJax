@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Simple launcher for CleanUp experiments (C0–C3). PPO-RE (C4) is not present in this repo.
+# Simple launcher for CleanUp experiments (C0–C4).
 PROJECT="socialjax-cleanup"
 ENTITY="${ENTITY:-""}"
 TOTAL_STEPS="${TOTAL_STEPS:-200000}"
@@ -35,8 +35,9 @@ run_one() {
         CONDITION=C3 MECHANISM_CLASS=ClassII+III RUN_NAME=C3_seed${SEED}
       ;;
     C4)
-      echo "PPO-RE / reward-exchange (C4) is not implemented in this repo." >&2
-      return 1
+      python algorithms/IPPO/ippo_cnn_cleanup_c4.py \
+        PROJECT=$PROJECT ENTITY="$ENTITY" TOTAL_TIMESTEPS=$TOTAL_STEPS SEED=$SEED \
+        CONDITION=C4 MECHANISM_CLASS=ClassIV RUN_NAME=C4_seed${SEED}
       ;;
     *)
       echo "Unknown condition: $COND" >&2
