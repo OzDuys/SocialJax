@@ -20,7 +20,7 @@ The original SocialJax paper and code are by Guo et al. (2025); see the upstream
 All experiments use the JAX‑based SocialJax implementation of **Cleanup**, a sequential social dilemma with **7 learning agents**, a river that accumulates waste, and an apple orchard:
 
 <p align="center">
-  <img src=".docs/images/step_150_reward_common_cleanup.gif" width="49%" alt="Cleanup Environment.">
+  <img src="./docs/images/step_150_reward_common_cleanup.gif" width="49%" alt="Cleanup Environment.">
 </p>
 
 - **Apples**: stepping on an apple yields `+1` reward for that agent.
@@ -38,9 +38,9 @@ env = make("clean_up", num_agents=7)
 
 ---
 
-## 2. Algorithms and Conditions (C0–C4)
+## 2. Algorithms, performance, and rollouts (C0–C4)
 
-Across all conditions we use on‑policy PPO‑style updates with convolutional actor–critic networks. The key differences are in how rewards are shaped and how credit is assigned.
+Across all conditions we use on‑policy PPO‑style updates with convolutional actor–critic networks. The key differences are in how rewards are shaped and how credit is assigned. This section describes each mechanism, its qualitative performance in Cleanup, and a representative policy rollout.
 
 ### Shared architecture
 
@@ -55,26 +55,36 @@ Across all conditions we use on‑policy PPO‑style updates with convolutional 
 - Script: `algorithms/IPPO/ippo_cnn_cleanup.py` with `ENV_KWARGS.shared_rewards=False`, `REWARD=individual`.
 - Each agent maximises its **own** apple reward using independent PPO (IPPO) with shared parameters.
 - No payoff shaping; no explicit credit assignment beyond the shared critic.
+- Behaviour: agents harvest greedily, over‑exploit the river, and the orchard collapses into a low‑reward tragedy of the commons.
+
+<p align="center">
+  <img src="./evaluation/cleanup/C0_seed2.gif" width="49%" alt="C0 IPPO individual">
+</p>
 
 ### C1 – IPPO with team reward (Class I: payoff shaping)
 
 - Script: `algorithms/IPPO/ippo_cnn_cleanup.py` with `ENV_KWARGS.shared_rewards=True`, `REWARD=common`.
-- All agents receive the **same team reward**, equal to the average apples collected across agents at each step:
-  \[
-    r_i^{\text{team}}(t) = \frac{1}{N}\sum_{j=1}^N r_j(t).
-  \]
+- All agents receive the **same team reward**, equal to the average apples collected across agents at each step, e.g.
+  `r_i_team(t) = (1 / N) * sum_j r_j(t)`.
 - Same IPPO architecture as C0; only the reward signal is pooled.
+- Behaviour: agents clean more consistently than in C0, but coordination between cleaning and harvesting is imperfect, so apples and welfare lag behind the best mechanisms.
+
+<p align="center">
+  <img src="./evaluation/cleanup/C1_seed2.gif" width="49%" alt="C1 IPPO team reward">
+</p>
 
 ### C2 – Social Value Orientation (SVO) shaping (Class I)
 
 - Script: `algorithms/SVO/svo_cnn_cleanup.py`.
 - Uses the `SVOLogWrapper` from SocialJax to mix own and others’ rewards:
-  \[
-    r_i^{\text{SVO}}(t)
-    = \cos(\theta)\, r_i(t) + \sin(\theta)\, r_{-i}(t)
-  \]
-  where \(\theta\) is the SVO angle and \(r_{-i}(t)\) is the mean reward of the other agents.
+  `r_i_SVO(t) = cos(theta) * r_i(t) + sin(theta) * r_-i(t)`,
+  where `theta` is the SVO angle and `r_-i(t)` is the mean reward of the other agents.
 - Still IPPO with shared parameters; only the reward is shaped according to the chosen SVO configuration.
+- Behaviour: more balanced cooperative patterns emerge; agents maintain river health and harvest effectively, achieving substantially higher welfare than C0 and slightly better team apples than C1 with relatively equal sharing of returns.
+
+<p align="center">
+  <img src="./evaluation/cleanup/C2_seed2.gif" width="49%" alt="C2 SVO shaping">
+</p>
 
 ### C3 – MAPPO with centralised critic (Class II: credit assignment)
 
@@ -83,69 +93,50 @@ Across all conditions we use on‑policy PPO‑style updates with convolutional 
   - Actor: shared, decentralised policy over local observations (as in C1/C2).
   - Critic: takes a stacked “world state” tensor combining all agents’ local views via `MAPPOWorldStateWrapper`.
 - Advantages for all agents are computed using this global value function; at execution time only the decentralised policy is used.
+- Behaviour: almost fully resolves the Cleanup social dilemma. Agents learn to keep the river clean and exploit the resulting apple respawns, yielding the highest team apples, cleaned water levels, and stable team returns among all mechanisms.
+
+<p align="center">
+  <img src="./evaluation/cleanup/C3_seed2.gif" width="49%" alt="C3 MAPPO">
+</p>
 
 ### C4 – Reciprocity via innovator/imitator dynamics (Class IV)
 
 - Script: `algorithms/IPPO/ippo_cnn_cleanup_c4.py`.
 - One **innovator** agent learns from its own environment reward (like C0).
 - Six **imitators** use the same IPPO architecture but receive an additional intrinsic reward encouraging their cleaning behaviour to match the innovator’s “niceness” trace:
-  \[
-    N_i(t) = \gamma_n N_i(t-1) + n_i(t),
-  \]
-  where \(n_i(t)\) indicates a cleaning action at time \(t\).
+  `N_i(t) = gamma_n * N_i(t-1) + n_i(t)`,
+  where `n_i(t)` indicates a cleaning action at time `t`.
 - Imitator reward:
-  \[
-    r_{\text{im},k}^{\text{tot}}(t)
-    = r_{\text{im},k}^{\text{env}}(t)
-    + \lambda_{\text{im}} \bigl(-\,(N_{\text{im},k}(t) - N_{\text{inv}}(t))^2\bigr).
-  \]
+  `r_im_tot(t) = r_im_env(t) + lambda_im * (-(N_im(t) - N_inv(t))^2)`,
+  where `N_inv(t)` is the innovator’s niceness trace and `lambda_im` scales the intrinsic term.
 - Innovator and imitators are trained with separate shared‑parameter actor–critics but identical optimisation hyperparameters.
+- Behaviour: imitators try to match the innovator, but with PPO the innovator often converges to a selfish policy before discovering cooperation. Imitators then copy defection, leading to low cleaning, very low apples, and high apparent inequality (a scarcity artifact rather than a rich hierarchy).
 
----
+<p align="center">
+  <img src="./evaluation/cleanup/C4_seed2.gif" width="49%" alt="C4 reciprocity">
+</p>
 
-## 3. Overall Empirical Results (Summary)
+### Overall comparison
 
 All runs are trained with a common budget of **100M environment timesteps** per condition on Cleanup with 7 agents.
 
-### Overall ordering (social welfare)
-
-Based on team apples, cleaned water, and evaluation metrics, the conditions are ordered approximately as:
-
-\[
-  \textbf{C3 (MAPPO)}
-  \;>\;
-  \textbf{C2 (SVO)}
-  \;>\;
-  \textbf{C1 (team reward)}
-  \;>\;
-  \textbf{C4 (reciprocity)} \approx \textbf{C0 (self‑interested)}.
-\]
-
+- **Social welfare (team apples, cleaned water, evaluation metrics)** is ordered approximately  
+  C3 (MAPPO) > C2 (SVO) > C1 (team reward) > C4 (reciprocity) ≈ C0 (self‑interested).
 - **C3 (MAPPO)** almost fully resolves the Cleanup social dilemma, sustaining a clean river and high, stable team returns.
 - **C2 (SVO)** substantially outperforms the self‑interested baseline, showing that simple payoff shaping can induce more cooperative behaviour.
 - **C1 (team reward)** cleans more but collects slightly fewer apples than C2, suggesting that naive reward pooling alone does not fix credit assignment.
 - **C4 (reciprocity)** is brittle: with PPO‑style updates, the innovator often converges to a selfish policy before discovering the cooperative regime, causing imitators to copy defection.
 - **C0 (self‑interested IPPO)** collapses into a classic tragedy of the commons with low apples and poor river health.
 
-### Equality and stability (Gini index)
+**Equality and stability (Gini index).** Using the Gini index of per‑agent episode returns (lower is more equal), the final ordering is roughly:
 
-Using the Gini index of per‑agent episode returns (lower is more equal), the final ordering is roughly:
+- C4 ≈ 0.94 (very unequal, but mostly due to extreme scarcity).
+- C0 ≈ 0.40.
+- C3 ≈ 0.36.
+- C2 ≈ 0.19.
+- C1 ≈ 0.18.
 
-\[
-  \text{C4 } (0.94)
-  \;>\;
-  \text{C0 } (0.40)
-  \;>\;
-  \text{C3 } (0.36)
-  \;>\;
-  \text{C2 } (0.19)
-  \;>\;
-  \text{C1 } (0.18).
-\]
-
-- C4’s extreme inequality is largely a **scarcity artifact**: when very few apples are produced, even small random advantages look highly unequal.
-- C0 similarly exhibits high, noisy Gini due to near‑zero average returns.
-- C2 and C3 achieve both higher welfare and more equal sharing of returns.
+C4’s extreme inequality is largely a **scarcity artifact**: when very few apples are produced, small random advantages look highly unequal. C0 shows a similar effect as the commons collapses. C2 and C3 achieve both higher welfare and more equal sharing of returns.
 
 ### Runtime on A100 40GB
 
@@ -160,7 +151,7 @@ Centralised critics provide the best welfare but come with a clear computational
 
 ---
 
-## 4. Training Curves and Evaluation Plots
+## 3. Training Curves and Evaluation Plots
 
 This repo includes key W&B export plots under `w&b charts`. Below are some of the most important ones:
 
@@ -179,33 +170,11 @@ This repo includes key W&B export plots under `w&b charts`. Below are some of th
 
 These plots correspond directly to the figures discussed in the thesis (e.g., team apples, cleaned water, clean‑action rate, and Gini index over training and at evaluation).
 
----
-
-## 5. Policy Rollouts (GIFs)
-
-The repository includes rollout GIFs for each condition in `evaluation/cleanup`. They provide a visual comparison of learned behaviour:
-
-<p align="center">
-  <img src="./evaluation/cleanup/C0_seed2.gif" width="19%" alt="C0 IPPO individual">
-  <img src="./evaluation/cleanup/C1_seed2.gif" width="19%" alt="C1 IPPO team reward">
-  <img src="./evaluation/cleanup/C2_seed2.gif" width="19%" alt="C2 SVO shaping">
-  <img src="./evaluation/cleanup/C3_seed2.gif" width="19%" alt="C3 MAPPO">
-  <img src="./evaluation/cleanup/C4_seed2.gif" width="19%" alt="C4 reciprocity">
-</p>
-
-- **C0 (IPPO, individual reward)**: agents harvest greedily, over‑exploit the river, and the orchard collapses.
-- **C1 (team reward)**: agents clean more consistently, but coordination between cleaning and harvesting is imperfect.
-- **C2 (SVO)**: more balanced cooperative patterns emerge; agents maintain river health and harvest effectively.
-- **C3 (MAPPO)**: most stable cooperative policy; sustained cleaning with high apple yields.
-- **C4 (reciprocity)**: imitators try to match the innovator, but if the innovator defects early, the whole population converges to low‑cleaning, low‑reward behaviour.
-
----
-
-## 6. Reproducing the Experiments
+## 4. Reproducing the Experiments
 
 The recommended setup mirrors the configuration used for the experiments and is designed to fit comfortably on a single A100 40GB GPU (and also on a 24GB A10).
 
-### 6.1 Environment and dependencies
+### 4.1 Environment and dependencies
 
 From the project root (this directory), using conda:
 
@@ -242,7 +211,7 @@ print("Devices:", jax.devices())
 PY
 ```
 
-### 6.2 Hyperparameters (A100‑friendly settings)
+### 4.2 Hyperparameters (A100‑friendly settings)
 
 For the main experiments we use:
 
@@ -262,7 +231,7 @@ For the main experiments we use:
 
 If you encounter OOM issues on smaller GPUs, reduce `NUM_ENVS` and/or `NUM_STEPS`, ensuring that `NUM_MINIBATCHES` divides `NUM_ENVS * num_agents * NUM_STEPS`.
 
-### 6.3 Launch commands
+### 4.3 Launch commands
 
 From within `SocialJax/` (this directory), with the `socialjax` environment active:
 
@@ -281,7 +250,7 @@ python algorithms/IPPO/ippo_cnn_cleanup.py \
   PROJECT=socialjax-cleanup ENTITY= \
   TOTAL_TIMESTEPS=100000000 NUM_ENVS=32 NUM_STEPS=256 NUM_MINIBATCHES=224 \
   ENV_KWARGS.shared_rewards=True REWARD=common \
-  CONDITION=C1 MECHANISM_CLASS=ClassI RUN_NAME=C1_seed1 SEED=1
+  CONDITION=C1 MECHANISM_CLASS=ClassI RUN_NAME=C1_seed0 SEED=0
 
 # C2 – SVO shaping
 python algorithms/SVO/svo_cnn_cleanup.py \
@@ -293,7 +262,7 @@ python algorithms/SVO/svo_cnn_cleanup.py \
 python algorithms/MAPPO/mappo_cnn_cleanup.py \
   PROJECT=socialjax-cleanup ENTITY= \
   TOTAL_TIMESTEPS=100000000 \
-  CONDITION=C3 MECHANISM_CLASS=ClassII+III RUN_NAME=C3_seed1 SEED=1
+  CONDITION=C3 MECHANISM_CLASS=ClassII+III RUN_NAME=C3_seed0 SEED=0
 
 # C4 – Reciprocity (innovator + imitators)
 python algorithms/IPPO/ippo_cnn_cleanup_c4.py \
@@ -306,7 +275,7 @@ These commands reproduce the training runs used for the empirical comparison. W&
 
 ---
 
-## 7. Quick Start: Using the Cleanup Environment
+## 5. Quick Start: Using the Cleanup Environment
 
 You can still use this repo as a lightweight Cleanup environment provider for your own MARL experiments:
 
@@ -333,7 +302,7 @@ for t in range(100):
 
 ---
 
-## 8. License and Attribution
+## 6. License and Attribution
 
 - This repository is a derivative work of **SocialJax** by Guo et al. (2025).
 - The code is distributed under the **Apache 2.0 License**; see `LICENSE` for full terms.
