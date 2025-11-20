@@ -19,6 +19,10 @@ The original SocialJax paper and code are by Guo et al. (2025); see the upstream
 
 All experiments use the JAX‑based SocialJax implementation of **Cleanup**, a sequential social dilemma with **7 learning agents**, a river that accumulates waste, and an apple orchard:
 
+<p align="center">
+  <img src=".docs/images/step_150_reward_common_cleanup.gif" width="49%" alt="Cleanup Environment.">
+</p>
+
 - **Apples**: stepping on an apple yields `+1` reward for that agent.
 - **Cleaning waste**: firing the clean beam on river waste gives **no direct reward**, but reduces pollution. A cleaner river increases apple respawn; a polluted river eventually stops apples respawning.
 - Observations are egocentric crops around each agent (local grid with apples, waste, walls, and other agents).
@@ -99,7 +103,7 @@ Across all conditions we use on‑policy PPO‑style updates with convolutional 
 
 ---
 
-## 3. Empirical Results (Summary)
+## 3. Overall Empirical Results (Summary)
 
 All runs are trained with a common budget of **100M environment timesteps** per condition on Cleanup with 7 agents.
 
@@ -161,21 +165,17 @@ Centralised critics provide the best welfare but come with a clear computational
 This repo includes key W&B export plots under `w&b charts`. Below are some of the most important ones:
 
 <p align="center">
-  <img src="./w%26b%20charts/training_apples_collected.png" width="32%" alt="Training apples collected">
-  <img src="./w%26b%20charts/training_cleaned_water.png" width="32%" alt="Training cleaned water">
-  <img src="./w%26b%20charts/training_clean_action_rate.png" width="32%" alt="Training clean action rate">
+  <img src="./w%26b%20charts/training_apples_collected.png" width="49%" alt="Training apples collected">
+  <img src="./w%26b%20charts/training_gini.png" width="49%" alt="Training Gini index">
+ 
 </p>
 
 <p align="center">
-  <img src="./w%26b%20charts/training_gini.png" width="32%" alt="Training Gini index">
-  <img src="./w%26b%20charts/eval_apples_collected.png" width="32%" alt="Evaluation apples collected">
-  <img src="./w%26b%20charts/eval_cleaned_water.png" width="32%" alt="Evaluation cleaned water">
+   <img src="./w%26b%20charts/training_cleaned_water.png" width="49%" alt="Training cleaned water">
+  <img src="./w%26b%20charts/training_clean_action_rate.png" width="49%" alt="Training clean action rate">
 </p>
 
-<p align="center">
-  <img src="./w%26b%20charts/eval_clean_action_rate.png" width="32%" alt="Evaluation clean action rate">
-  <img src="./w%26b%20charts/gini_index.png" width="32%" alt="Final Gini index">
-</p>
+
 
 These plots correspond directly to the figures discussed in the thesis (e.g., team apples, cleaned water, clean‑action rate, and Gini index over training and at evaluation).
 
