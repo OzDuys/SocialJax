@@ -4,3 +4,7 @@ outputs/
 wandb/
 checkpoints/
 *.pickle
+
+# DS_Store
+.DS_Store
+.vscode/

@@ -156,14 +156,13 @@ Centralised critics provide the best welfare but come with a clear computational
 This repo includes key W&B export plots under `w&b charts`. Below are some of the most important ones:
 
 <p align="center">
-  <img src="./w%26b%20charts/training_apples_collected.png" width="49%" alt="Training apples collected">
-  <img src="./w%26b%20charts/training_gini.png" width="49%" alt="Training Gini index">
- 
+  <img src="./docs/w%26b%20charts/training_apples_collected.png" width="49%" alt="Training apples collected">
+  <img src="./docs/w%26b%20charts/training_gini.png" width="49%" alt="Training Gini index">
 </p>
 
 <p align="center">
-   <img src="./w%26b%20charts/training_cleaned_water.png" width="49%" alt="Training cleaned water">
-  <img src="./w%26b%20charts/training_clean_action_rate.png" width="49%" alt="Training clean action rate">
+  <img src="./docs/w%26b%20charts/training_cleaned_water.png" width="49%" alt="Training cleaned water">
+  <img src="./docs/w%26b%20charts/training_clean_action_rate.png" width="49%" alt="Training clean action rate">
 </p>
 
 
